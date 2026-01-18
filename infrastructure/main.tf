@@ -11,6 +11,7 @@ resource "aws_internet_gateway" "igw" {
 
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
+  availability_zone = "${var.aws_region}a"
   cidr_block              = "10.0.1.0/24"
   map_public_ip_on_launch = true # Makes it a Public Subnet
 }
@@ -62,24 +63,45 @@ resource "aws_security_group" "web_sg" {
   }
 }
 
-# 3. Storage: ECR Repository
-resource "aws_ecr_repository" "app_repo" {
-  name                 = "book-shop"
-  image_tag_mutability = "MUTABLE" # Allows re-tagging for promotion
+# 3. Storage: Public ECR Repository
+resource "aws_ecrpublic_repository" "app_repo" {
+  repository_name = "book-shop"
+
+  catalog_data {
+    about_text = "Book Shop Dev Images"
+    description = "Public dev images for Book Shop"
+  }
 }
 
+
 # 4. Compute: EC2 Instance
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+}
+
 resource "aws_instance" "dev_prod_server" {
-  ami           = "ami-0c7217cdde317cfec" # Ubuntu 22.04 LTS (Verify for your region)
+  ami           = data.aws_ami.ubuntu.id
   instance_type = var.instance_type
   user_data = file("scripts/setup.sh")
   subnet_id     = aws_subnet.public.id
   key_name      = var.key_name
   vpc_security_group_ids = [aws_security_group.web_sg.id]
+  associate_public_ip_address = true
 
   root_block_device {
     volume_size = 30 # Your requirement: 30GB
   }
 
   tags = { Name = "${var.project_name}-server" }
+}
+
+resource "aws_eip" "server_eip" {
+  instance = aws_instance.dev_prod_server.id
+  domain   = "vpc"
 }

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Log all output to help with debugging if something fails
 exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
@@ -21,6 +22,7 @@ systemctl start nginx
 
 # 3. Install MicroK8s
 echo "Installing MicroK8s..."
+snap wait system seed.loaded
 snap install microk8s --classic --channel=1.28/stable
 usermod -a -G microk8s ubuntu
 mkdir -p /home/ubuntu/.kube
@@ -59,7 +61,7 @@ server {
 }
 EOF
 
-ln -s /etc/nginx/sites-available/reverse-proxy /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/reverse-proxy /etc/nginx/sites-enabled/reverse-proxy
 rm /etc/nginx/sites-enabled/default
 systemctl restart nginx
 
