@@ -26,7 +26,7 @@ The development environment runs on the developer’s local machine (Ubuntu).
 * Docker
 * Terraform
 * AWS CLI
-* Kubernetes (local tooling)
+* MicroK8s (local tooling)
 * Git (configured with a personal GitHub account)
 
 In this environment, the Django application is containerized using Docker for local development and testing. No cloud resources are required to validate initial application behavior.
@@ -42,7 +42,7 @@ In this environment, the Django application is containerized using Docker for lo
 * **Amazon EC2:** Ubuntu-based instance with a 30 GB EBS volume located in the public subnet.
 * **Amazon Elastic Container Registry (ECR) – Public:** Stores both Snapshot and Release application images.
 * **Docker:** Runs the development/testing version of the application using Snapshot images.
-* **Kubernetes (Single Node on EC2):** Runs the production version of the application using Release images.
+* **MicroK8s (Single Node on EC2):** Runs the production version of the application using Release images.
 * **NGINX:** Installed on the EC2 instance as a reverse proxy with two server blocks:
     * **Port 80:** Routes traffic to the Kubernetes-managed production application.
     * **Port 8080:** Routes traffic to the Docker-managed snapshot application.
