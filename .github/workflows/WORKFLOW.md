@@ -37,7 +37,6 @@ IMAGE_TAG = `X.Y.Z-SNAPSHOT-<short-sha>`
 Example: `1.2.0-SNAPSHOT-7d2a1b`
 
 This tag uniquely identifies the code and build.
-
 ---
 
 ### 4. AWS Authentication (Push Only)
@@ -97,40 +96,28 @@ Runner:
 Steps:
 - Check out the repository code
 - Ensure Docker and AWS CLI are available
-- GitHub CLI (`gh`) or a release action is used to create releases
 
 ---
 
 ### 3. Metadata Extraction (Release Identification)
 - Read the release version from `pyproject.toml` (e.g., `1.2.0`)
-- Retrieve the SNAPSHOT image tag that was built and tested in the Dev workflow
-
-Important:
-- The SNAPSHOT tag is treated as the **single source of truth**
-- It must be passed from Dev to Prod (via release notes, artifacts, or workflow outputs)
-- The Prod workflow does not attempt to infer the SNAPSHOT tag automatically
-
+- Extract the short Git commit SHA (7 characters)
+- Rebuild the SNAPSHOT tag the same way it was built in the dev workflow to identify the SNAPSHOT tag in the ECR
+ Production promotion assumes that the main branch contains the exact commit used to build the Dev SNAPSHOT image. Squash and rebase merges are forbidden.
 ---
 
 ### 4. GitHub Release Creation (Official Versioning)
-- Create a GitHub Release for version `vX.Y.Z`
-- Generate release notes automatically (commits / PRs since last release)
-- Create an annotated Git tag matching the release version
+- Create a GitHub Tag & Release for version `vX.Y.Z` (Using softprops/action-gh-release )
+- Generates release notes automatically (commits / PRs since last release)
+- Creates an annotated Git tag matching the release version
 
 This step marks the code as officially promoted to production.
 
 ---
 
 ### 5. Image Promotion in Public ECR (Re-Tagging)
-Because Public ECR does not support server-side retagging:
-
-- Pull the SNAPSHOT image from Public ECR
-- Tag it with the release version (e.g., `v1.2.0`)
-- Push the new tag back to Public ECR
-
-Notes:
-- No new layers are built
-- The production image is byte-for-byte identical to the tested SNAPSHOT image
+Because Public ECR does not reliably support server-side re-tagging, promotion is done by pulling the SNAPSHOT image (whose tag was rebuilt), re-tagging it locally, and pushing the release tag.
+This does not rebuild the image and does not create new layers.
 
 ---
 
@@ -139,8 +126,8 @@ Connection:
 - Use SSH to connect to the EC2 instance
 
 Execution:
-- All Kubernetes commands are executed with elevated permissions:
-  - `sudo microk8s kubectl ...`
+- Since the ubuntu user was given the necessary micrk8s permissions in the user_data script, no need to use sudo:
+  - `microk8s kubectl ...`
 
 Steps on EC2:
 - Apply the Kubernetes manifests:
@@ -162,3 +149,14 @@ Result:
 - Public ECR removes the need for AWS credentials on EC2
 - Kubernetes handles rollout safety and health checks
 - Image tags are immutable and traceable back to Git commits
+
+## The Git Workflow
+
+### Work on dev
+Push Code to Dev Branch
+This triggers the Dev Workflow
+
+### Ready for Release
+Merge Dev to Main Branch
+- Only Standard Merge Commit or Fast-Forward Allowed. 
+- No Squash or Rebase, since that'll change the SHA of the commit that Prod Workflow will use to rebuild the same SNAPSHOT tag from Dev
