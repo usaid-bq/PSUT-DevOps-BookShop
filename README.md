@@ -1,5 +1,11 @@
 # PSUT DevOps Course – Graduation Project
 
+**[!] Disclamer [!]***
+The IaC and the CI/CD pipeline have not yet been actually tested.
+The current implimentation is purely theoretical.
+I have not had the time to properly test and debug yet since the project coincided with my preperation for Final Exams.
+I plan on going back and going over the project again when I'm done with exams on the 25th In Sha' Allah.
+
 ## Overview
 The primary objective of this project is to demonstrate a complete DevOps workflow, including:
 
@@ -52,39 +58,64 @@ One Security Group is attached to the EC2 instance. Inbound traffic is explicitl
 * Ports required by NGINX (**80** and **8080**)
 * All other inbound traffic is denied.
 
-## CI/CD Pipeline
-The CI/CD pipeline automates application packaging, image storage, and deployment based on Git branch activity.
+## CI/CD Pipeline and Deployment Strategy
+
+The project implements a promotion-based CI/CD pipeline using GitHub Actions, Amazon ECR (Public), Docker, and MicroK8s. This ensures that the exact code tested in development is the one that reaches production without being rebuilt.
 
 ### Application Packaging
-* **Dockerfile:** Located in the `book-shop` directory (the Django project root).
-* **Image Types:**
-    * **Snapshot Images:** Represent development or intermediate states.
-    * **Release Images:** Represent production-ready, versioned states.
 
-### Image Versioning and Storage
-All images are stored in a public Amazon ECR repository. Versioning is based on:
-1.  Application version (defined as `$VERSION` in `pyproject.toml`)
-2.  Git commit SHA
-3.  Image type (Snapshot or Release)
+- **Containerization**: The Django application is packaged using a Dockerfile located in the book-shop directory.
+- **Immutable Artifacts**: Once an image is built, it is never altered. It is moved through environments by re-tagging rather than re-building to ensure artifact consistency.
 
-### Pipeline Triggers and Behavior
+### Image Versioning Logic
 
-#### 1. Push to `dev` Branch (Development Workflow)
-* A new Docker image is built and tagged as: `$VERSION-SNAPSHOT-<GIT_SHA>`.
-* The image is pushed to the public ECR repository.
-* The EC2 instance pulls the new Snapshot image.
-* The running Docker container on EC2 is restarted.
-* Traffic to port **8080** is updated automatically.
+All images are stored in a public Amazon ECR repository using a structured tagging scheme:
+1. **Snapshot Tags**: vX.Y.Z-SNAPSHOT-<7-char-sha> (Used for Development and Testing)
+2. **Release Tags**: vX.Y.Z (Used for Production)
 
-#### 2. Push to `main` Branch (Release Workflow)
-* A new GitHub Release and Git tag are created using `$VERSION`.
-* The corresponding Snapshot image is promoted to a **Release** image in ECR.
-* The Release image is pulled by the EC2 instance.
-* The Kubernetes workload is updated via a rolling restart or update.
-* The production application (exposed on port **80**) runs the new Release image.
+### Pipeline Workflows
+
+#### 1. Development Workflow (Continuous Deployment)
+
+**Trigger**: Any push to the dev branch.
+
+- **Build**: Extracts the version from pyproject.toml and the Git SHA to build a unique Snapshot image.
+- **Registry**: Pushes the Snapshot to Amazon ECR.
+- **Deploy**: Connects via SSH to the EC2 instance and restarts the Docker container.
+- **Access**: The Dev environment is immediately updated and accessible on Port 8080. Nginx proxies this traffic to the internal host port 4000.
+
+#### 2. Production Workflow (Promotion and Release)
+
+**Trigger**: A push or merge to the main branch.
+
+- **Promotion**: The pipeline identifies the existing Snapshot image in ECR associated with the current commit and re-tags it with the official version (e.g., v1.2.0). No rebuilding occurs.
+- **Release**: Automatically creates a GitHub Release with generated changelogs and an official Git tag using the softprops/action-gh-release action.
+- **Orchestration**: Connects via SSH to the EC2 instance and instructs MicroK8s to perform a rolling update.
+- **Rollout**: Kubernetes applies the updated k8s/app-prod.yaml manifest. The deployment image is updated to the new release tag, and MicroK8s ensures zero-downtime as traffic on Port 80 shifts to the new version.
+
+### Network and Environment Mapping
+
+The EC2 instance separates environments by port using Nginx as a reverse proxy:
+
+- **Development Environment**
+  - Registry Tag: SNAPSHOT
+  - Infrastructure: Docker
+  - Host Port: 4000
+  - Nginx Entry: Port 8080
+
+- **Production Environment**
+  - Registry Tag: vX.Y.Z
+  - Infrastructure: MicroK8s
+  - Host Port: 30001 (NodePort)
+  - Nginx Entry: Port 80
+
+### Design Guarantees
+
+- **Environment Parity**: Dev and Prod run the identical image artifact.
+- **Traceability**: Every production release is linked to a specific GitHub Release and Git commit SHA.
+- **Safety**: Kubernetes health checks ensure the new version is healthy before shutting down the old pods.
 
 ## Notes
-* Snapshot and Release images share the same base image and configuration, differing only in tagging and deployment target.
 * Docker is intentionally used for development/testing workloads, while Kubernetes is reserved for production to demonstrate both paradigms.
 * Infrastructure provisioning and configuration are automated using Terraform.
 
