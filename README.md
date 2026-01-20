@@ -1,6 +1,7 @@
 # PSUT DevOps Course – Graduation Project
 
-**[!] Disclamer [!]***
+**[!] Disclamer [!]**
+
 The IaC and the CI/CD pipeline have not yet been actually tested.
 The current implimentation is purely theoretical.
 I have not had the time to properly test and debug yet since the project coincided with my preperation for Final Exams.
