@@ -1,0 +1,78 @@
+name: Prod Release Promotion
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: book-shop
+  ECR_ALIAS: ${{ secrets.ECR_REGISTRY_ALIAS }}
+
+jobs:
+  promote-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for creating the GitHub Release
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Ensure we have history to match SHAs
+
+      - name: Extract Version and SHA
+        run: |
+          VERSION=$(grep "version =" pyproject.toml | cut -d '"' -f 2)
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "REL_VERSION=v$VERSION" >> $GITHUB_ENV
+          echo "SNAPSHOT_TAG=${VERSION}-SNAPSHOT-${SHORT_SHA}" >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Image Promotion (Re-tagging)
+        run: |
+          REPO_URL="public.ecr.aws/${{ env.ECR_ALIAS }}/${{ env.ECR_REPOSITORY }}"
+          
+          # Pull the snapshot built in Dev
+          docker pull $REPO_URL:${{ env.SNAPSHOT_TAG }}
+          
+          # Tag it as the official version
+          docker tag $REPO_URL:${{ env.SNAPSHOT_TAG }} $REPO_URL:${{ env.REL_VERSION }}
+          
+          # Push the promoted release tag
+          docker push $REPO_URL:${{ env.REL_VERSION }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.REL_VERSION }}
+          generate_release_notes: true
+
+      - name: Deploy to EC2 (MicroK8s)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            REPO_URL="public.ecr.aws/${{ env.ECR_ALIAS }}/${{ env.ECR_REPOSITORY }}"
+            
+            # Apply the All-in-one manifest
+            # (Assumes your manifest is at k8s/app-prod.yaml)
+            microk8s kubectl apply -f k8s/app-prod.yaml
+            
+            # Perform the Rolling Update to the new version
+            microk8s kubectl set image deployment/django-app django-container=$REPO_URL:${{ env.REL_VERSION }}
+            
+            # Monitor the status
+            microk8s kubectl rollout status deployment/django-app

@@ -1,0 +1,67 @@
+name: Dev Snapshot Deployment
+
+on:
+  push:
+    branches: [ "dev" ]
+
+env:
+  AWS_REGION: us-east-1 
+  ECR_REPOSITORY: book-shop
+  # Replace with your Public ECR Registry Alias (found in ECR console)
+  ECR_ALIAS: ${{ secrets.ECR_REGISTRY_ALIAS }} 
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Extract Metadata
+        id: meta
+        run: |
+          VERSION=$(grep "version =" pyproject.toml | cut -d '"' -f 2)
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TAG="${VERSION}-SNAPSHOT-${SHORT_SHA}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SNAPSHOT_TAG=$TAG" >> $GITHUB_ENV
+          echo "FULL_IMAGE=public.ecr.aws/${{ env.ECR_ALIAS }}/${{ env.ECR_REPOSITORY }}:$TAG" >> $GITHUB_ENV
+
+      - name: Build and Push Snapshot
+        run: |
+          docker build -t ${{ env.FULL_IMAGE }} .
+          docker push ${{ env.FULL_IMAGE }}
+
+      - name: Deploy to EC2 (Docker)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Remove old container if it exists
+            docker stop dev-app || true
+            docker rm dev-app || true
+            
+            # Run new container on Port 4000
+            docker run -d \
+              --name dev-app \
+              -p 4000:8000 \
+              --restart unless-stopped \
+              ${{ env.FULL_IMAGE }}
+            
+            # Cleanup old images
+            docker image prune -af
