@@ -7,7 +7,7 @@ on:
 env:
   AWS_REGION: us-east-1 
   ECR_REPOSITORY: book-shop
-  # Replace with your Public ECR Registry Alias (found in ECR console)
+  # This will be replaced with my actual ECR alias once I implement the infrastructure
   ECR_ALIAS: ${{ secrets.ECR_REGISTRY_ALIAS }} 
 
 jobs:

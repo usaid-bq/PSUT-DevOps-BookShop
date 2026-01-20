@@ -13,12 +13,12 @@ jobs:
   promote-and-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required for creating the GitHub Release
+      contents: write 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Ensure we have history to match SHAs
+          fetch-depth: 0
 
       - name: Extract Version and SHA
         run: |
@@ -68,8 +68,7 @@ jobs:
             REPO_URL="public.ecr.aws/${{ env.ECR_ALIAS }}/${{ env.ECR_REPOSITORY }}"
             
             # Apply the All-in-one manifest
-            # (Assumes your manifest is at k8s/app-prod.yaml)
-            microk8s kubectl apply -f k8s/app-prod.yaml
+            microk8s kubectl apply -f k8s/prod-app.yml
             
             # Perform the Rolling Update to the new version
             microk8s kubectl set image deployment/django-app django-container=$REPO_URL:${{ env.REL_VERSION }}
